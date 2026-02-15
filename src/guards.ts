@@ -1,3 +1,16 @@
+/**
+ * @module guards
+ * Write-guard layer that sits between MCP tool handlers and the raw API.
+ *
+ * Every state-mutating tool call flows through `runApiTool`, which:
+ * 1. Checks local write blocks (suspension > verification > cooldown > safe-mode)
+ * 2. Executes the API request
+ * 3. Scans the response for suspension signals and updates state
+ * 4. Extracts retry-after durations and sets per-type cooldowns
+ * 5. Detects verification challenges, attempts auto-solve, and falls back to blocking
+ *
+ * This ensures the agent self-throttles and never spams the API after a block.
+ */
 import { apiRequest } from "./api.js";
 import type { ApiRequestOptions } from "./api.js";
 import { clearExpiredState, loadState, saveState } from "./state.js";
@@ -13,8 +26,13 @@ import { autoVerify } from "./verify.js";
 import type { MoltbookState } from "./state.js";
 import type { ToolResult } from "./util.js";
 
+/** Minimum interval between writes in safe mode (prevents accidental spam). */
 export const SAFE_WRITE_INTERVAL_MS = 15000;
 
+/**
+ * Tools that mutate server state. Includes aliases (e.g. moltbook_comment)
+ * and moltbook_raw_request since non-GET raw requests can write data.
+ */
 export const WRITE_TOOLS = new Set([
   "moltbook_post_create",
   "moltbook_post_delete",
@@ -39,6 +57,7 @@ export interface WriteBlockResult {
   until?: string | null;
 }
 
+/** Maps a tool name to its write category for per-type cooldown tracking. */
 export function classifyWriteKind(toolName: string): string {
   if (toolName.includes("post")) return "post";
   if (toolName.includes("comment")) return "comment";
@@ -46,6 +65,14 @@ export function classifyWriteKind(toolName: string): string {
   return "write";
 }
 
+/**
+ * Checks whether writes are currently blocked, in priority order:
+ * 1. Account suspension (hard block)
+ * 2. Pending verification challenge (must solve first)
+ * 3. API-imposed cooldown (from retry-after headers)
+ * 4. Safe-mode write interval (local throttle)
+ * Returns null if the write is allowed.
+ */
 export function checkWriteBlocked(state: MoltbookState, _toolName: string): WriteBlockResult | null {
   if (state.suspension?.active) {
     return { code: "account_suspended", message: state.suspension.reason ?? "Account suspended", until: state.suspension.until ?? null };
@@ -66,11 +93,17 @@ export interface RunApiToolOptions extends ApiRequestOptions {
   isWrite?: boolean;
 }
 
+/**
+ * Central orchestrator for all tool API calls.
+ * Flow: guard check -> API request -> suspension detection -> cooldown extraction
+ *       -> verification detection -> auto-verify attempt -> fallback blocking
+ */
 export async function runApiTool(toolName: string, method: string, path: string, options: RunApiToolOptions = {}): Promise<ToolResult> {
   const state = loadState();
   clearExpiredState(state);
   const isWrite = options.isWrite === true || WRITE_TOOLS.has(toolName);
 
+  // Pre-flight: block writes if any guard condition is active
   if (isWrite) {
     const blocked = checkWriteBlocked(state, toolName);
     if (blocked) {
@@ -81,16 +114,19 @@ export async function runApiTool(toolName: string, method: string, path: string,
 
   const response = await apiRequest(method, path, options);
 
+  // Post-flight: scan response for suspension signals
   const suspension = extractSuspension(response);
   if (suspension) {
     state.suspension = { active: true, reason: suspension.reason, until: suspension.until ? String(suspension.until) : null, seen_at: nowIso() };
   } else if (toolName === "moltbook_status" && response.ok) {
+    // A successful status check with no suspension signals clears a prior suspension
     const status = String(response.body?.status ?? "").toLowerCase();
     if (!status.includes("suspend") && !status.includes("ban")) {
       state.suspension = { active: false, reason: null, until: null, seen_at: nowIso() };
     }
   }
 
+  // Extract rate-limit info and set per-type cooldowns
   if (isWrite) {
     const retrySeconds = extractRetrySeconds(response);
     if (retrySeconds > 0) {
@@ -102,6 +138,7 @@ export async function runApiTool(toolName: string, method: string, path: string,
     }
   }
 
+  // Detect verification challenges on write responses
   const verification = isWrite ? extractVerification(response) : null;
   if (verification) {
     // Try auto-solve before blocking

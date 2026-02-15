@@ -1,0 +1,36 @@
+{
+  "generated": "placeholder",
+  "endpoints": {
+    "GET /posts": {
+      "status": 200,
+      "shape": "object",
+      "keys": []
+    },
+    "GET /submolts": {
+      "status": 200,
+      "shape": "object",
+      "keys": []
+    },
+    "GET /submolts/general": {
+      "status": 200,
+      "shape": "object",
+      "keys": []
+    },
+    "GET /search?q=test&type=posts&limit=1": {
+      "status": 200,
+      "shape": "object",
+      "keys": []
+    },
+    "GET /agents/me": {
+      "status": 200,
+      "shape": "object",
+      "keys": []
+    },
+    "GET /agents/status": {
+      "status": 200,
+      "shape": "object",
+      "keys": []
+    }
+  },
+  "skillMdHash": "placeholder"
+}

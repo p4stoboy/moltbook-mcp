@@ -1,3 +1,22 @@
+/**
+ * @module tools
+ * MCP tool registration for all Moltbook API operations.
+ *
+ * Tools are organized into groups:
+ * - Local-only: health, write guard status, challenge status (no write guards)
+ * - Verify: challenge answer submission with auto-solve
+ * - Account: profile and status management
+ * - Posts & Feed: listing, creating, deleting posts; feed browsing
+ * - Comments: listing and creating comments (with aliases)
+ * - Votes: post and comment voting
+ * - Search: semantic search across posts/comments
+ * - Submolts: community management (list, get, create, subscribe)
+ * - Social: follow/unfollow agents
+ * - Raw: allowlisted arbitrary API requests for advanced use
+ *
+ * Alias tools (e.g. moltbook_feed, moltbook_comment, moltbook_vote) provide
+ * alternate names for the same functionality to match user expectations.
+ */
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { apiRequest, normalizePath, RAW_PATH_ALLOWLIST } from "./api.js";
@@ -6,7 +25,7 @@ import { clearExpiredState, loadState, saveState } from "./state.js";
 import { handleVerify } from "./verify.js";
 import { extractSuspension, makeResult, nowIso, requireString } from "./util.js";
 
-// ---------- Local-only tools ----------
+// ---------- Local-only tools (bypass write guards, read local state or health-check) ----------
 
 function registerHealth(server: McpServer): void {
   server.tool("moltbook_health", "Health check for status/auth/pending challenge.", {}, async () => {
@@ -54,7 +73,7 @@ function registerChallengeStatus(server: McpServer): void {
   });
 }
 
-// ---------- Verify ----------
+// ---------- Verify (delegates to verify.ts which handles auto-solve + manual fallback) ----------
 
 function registerVerify(server: McpServer): void {
   server.tool(
@@ -71,7 +90,7 @@ function registerVerify(server: McpServer): void {
   );
 }
 
-// ---------- Account ----------
+// ---------- Account (profile, status, owner email) ----------
 
 function registerAccount(server: McpServer): void {
   server.tool("moltbook_status", "Get account claim/suspension status.", {}, () =>
@@ -106,7 +125,7 @@ function registerAccount(server: McpServer): void {
   );
 }
 
-// ---------- Posts & Feed ----------
+// ---------- Posts & Feed (listing, creation, deletion; aliases for alternate names) ----------
 
 function registerPosts(server: McpServer): void {
   const feedSchema = {
@@ -163,7 +182,7 @@ function registerPosts(server: McpServer): void {
   );
 }
 
-// ---------- Comments ----------
+// ---------- Comments (listing + creation with alias) ----------
 
 function registerComments(server: McpServer): void {
   server.tool(
@@ -195,7 +214,7 @@ function registerComments(server: McpServer): void {
   });
 }
 
-// ---------- Votes ----------
+// ---------- Votes (post and comment voting with alias) ----------
 
 function registerVotes(server: McpServer): void {
   const votePostSchema = {
@@ -222,7 +241,7 @@ function registerVotes(server: McpServer): void {
   );
 }
 
-// ---------- Search ----------
+// ---------- Search (semantic search across posts and comments) ----------
 
 function registerSearch(server: McpServer): void {
   server.tool(
@@ -237,7 +256,7 @@ function registerSearch(server: McpServer): void {
   );
 }
 
-// ---------- Submolts ----------
+// ---------- Submolts (community management: list, get, create, subscribe/unsubscribe) ----------
 
 function registerSubmolts(server: McpServer): void {
   server.tool("moltbook_submolts_list", "List submolts.", {}, () =>
@@ -275,7 +294,7 @@ function registerSubmolts(server: McpServer): void {
   );
 }
 
-// ---------- Social graph ----------
+// ---------- Social graph (follow/unfollow agents) ----------
 
 function registerSocial(server: McpServer): void {
   server.tool("moltbook_follow", "Follow agent.", { name: z.string() }, (args) =>
@@ -287,7 +306,7 @@ function registerSocial(server: McpServer): void {
   );
 }
 
-// ---------- Raw request ----------
+// ---------- Raw request (allowlisted paths only, for advanced/undocumented endpoints) ----------
 
 function registerRawRequest(server: McpServer): void {
   server.tool(
@@ -312,6 +331,7 @@ function registerRawRequest(server: McpServer): void {
 
 // ---------- Main registration ----------
 
+/** Registers all Moltbook tools on the given MCP server instance. */
 export function registerTools(server: McpServer): void {
   registerHealth(server);
   registerWriteGuardStatus(server);

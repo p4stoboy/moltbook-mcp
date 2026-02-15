@@ -1,3 +1,27 @@
+/**
+ * @module verify
+ * Challenge solver for Moltbook verification challenges.
+ *
+ * Algorithm overview:
+ * Challenges arrive as either digit expressions ("3 + 5 * 2") or obfuscated
+ * English number-word sentences ("What is thuuurteen adddds sevvven?").
+ *
+ * Two-path solver design:
+ * 1. **Digit path** (fast): regex-extracts arithmetic expressions with digits and
+ *    operators, evaluates via `Function()`. Tried first as a quick win.
+ * 2. **Word path** (robust): normalizes text by stripping non-alpha chars and
+ *    collapsing consecutive duplicate letters ("thuuurteen" -> "thirtein"),
+ *    then fuzzy-matches tokens against number-word dictionaries using
+ *    subsequence matching with tight length bounds. Detects the arithmetic
+ *    operation from keywords in the original (non-deduped) text, then computes.
+ *
+ * The dedup strategy collapses repeated letters ("eee" -> "e") to handle the
+ * API's intentional character-stretching obfuscation. Fuzzy matching uses
+ * `candidate.length <= word.length + 2` to prevent false positives (e.g.
+ * "antena" should not match "ten" even though "ten" is a subsequence).
+ * Filler words exclude operation keywords so they act as natural separators
+ * between number operands during extraction.
+ */
 import { apiRequest, normalizePath } from "./api.js";
 import type { ApiResponse } from "./util.js";
 import { clearExpiredState, loadState, saveState } from "./state.js";
@@ -6,12 +30,18 @@ import type { ToolResult } from "./util.js";
 
 // ── Helpers ──
 
-/** Collapse consecutive duplicate letters: "oo" → "o", "ee" → "e" */
+/**
+ * Collapse consecutive duplicate letters: "oo" -> "o", "ee" -> "e".
+ * Handles the API's character-stretching obfuscation (e.g. "thuuurteen").
+ */
 function dedup(s: string): string {
   return s.replace(/(.)\1+/g, "$1");
 }
 
-/** Build a dictionary with deduped keys + sorted key list for fuzzy matching */
+/**
+ * Build a lookup dictionary with deduped keys and a longest-first sorted key
+ * list for greedy fuzzy matching.
+ */
 function buildDict(src: Record<string, number>): { dict: Record<string, number>; keys: string[] } {
   const dict: Record<string, number> = {};
   for (const [k, v] of Object.entries(src)) dict[dedup(k)] = v;
@@ -20,6 +50,7 @@ function buildDict(src: Record<string, number>): { dict: Record<string, number>;
 
 // ── Number word dictionaries (keys are deduped to match normalized text) ──
 
+/** Ones and teens: 0-19 as English words (source form before dedup). */
 const ONES_SRC: Record<string, number> = {
   zero: 0, one: 1, two: 2, three: 3, four: 4, five: 5,
   six: 6, seven: 7, eight: 8, nine: 9, ten: 10,
@@ -27,6 +58,7 @@ const ONES_SRC: Record<string, number> = {
   sixteen: 16, seventeen: 17, eighteen: 18, nineteen: 19,
 };
 
+/** Tens: 20-90 as English words (source form before dedup). */
 const TENS_SRC: Record<string, number> = {
   twenty: 20, thirty: 30, forty: 40, fifty: 50,
   sixty: 60, seventy: 70, eighty: 80, ninety: 90,
@@ -40,6 +72,11 @@ const TENS = buildDict(TENS_SRC);
 // Operation keywords (adds, minus, times, etc.) are intentionally EXCLUDED
 // so they act as natural separators between number words.
 
+/**
+ * Words to skip when scanning for number tokens. Stored in deduped form.
+ * Operation keywords are intentionally omitted so "adds", "times", etc.
+ * break the token stream and separate number operands.
+ */
 const FILLER = new Set([
   "um", "uh", "uhm", "like", "so", "but", "the", "a", "an", "is", "are",
   "at", "of", "in", "its", "it", "this", "that", "and", "or", "to", "by",
@@ -54,7 +91,7 @@ const FILLER = new Set([
 
 // ── Text normalization ──
 
-function normalizeChallenge(raw: string): string {
+export function normalizeChallenge(raw: string): string {
   return raw
     .toLowerCase()
     .replace(/[^a-z\s]/g, "")       // strip all non-alpha non-space
@@ -65,6 +102,7 @@ function normalizeChallenge(raw: string): string {
 
 // ── Fuzzy matching via subsequence check ──
 
+/** Returns true if every character of `word` appears in `candidate` in order. */
 function isSubsequence(word: string, candidate: string): boolean {
   let wi = 0;
   for (let ci = 0; ci < candidate.length && wi < word.length; ci++) {
@@ -73,6 +111,11 @@ function isSubsequence(word: string, candidate: string): boolean {
   return wi === word.length;
 }
 
+/**
+ * Fuzzy-matches a candidate token against a number-word dictionary.
+ * Exact match is tried first, then subsequence matching with tight length bounds
+ * (word.length +2 / -1) to prevent false positives like "antena" matching "ten".
+ */
 function fuzzyMatch(candidate: string, db: { dict: Record<string, number>; keys: string[] }): { word: string; value: number } | null {
   if (candidate in db.dict) return { word: candidate, value: db.dict[candidate]! };
   for (const word of db.keys) {
@@ -88,7 +131,7 @@ function fuzzyMatch(candidate: string, db: { dict: Record<string, number>; keys:
 
 // ── Extract numbers from normalized text ──
 
-function extractNumbers(text: string): number[] {
+export function extractNumbers(text: string): number[] {
   const tokens = text.split(" ").filter(t => t.length > 0 && !FILLER.has(t));
   const numbers: number[] = [];
   let i = 0;
@@ -143,13 +186,18 @@ function extractNumbers(text: string): number[] {
 // Runs on lightly-normalized text (lowercased, non-alpha stripped, whitespace collapsed,
 // but WITHOUT letter dedup — so "subtracts" stays "subtracts", not "subtracts" → "subtracts").
 
-type Op = "add" | "sub" | "mul" | "div";
+export type Op = "add" | "sub" | "mul" | "div";
 
+/**
+ * Light normalization for operation detection: lowercases and strips non-alpha,
+ * but does NOT dedup letters. This preserves word boundaries like "subtracts"
+ * so operation-keyword regexes match reliably.
+ */
 function lightNormalize(raw: string): string {
   return raw.toLowerCase().replace(/[^a-z\s]/g, "").replace(/\s+/g, " ").trim();
 }
 
-function detectOperation(text: string): Op {
+export function detectOperation(text: string): Op {
   if (/\b(times|multipl\w*|product)\b/.test(text)) return "mul";
   if (/\b(divid\w*|ratio|split)\b/.test(text)) return "div";
   if (/\b(subtract\w*|slow\w*|remain\w*|minus|less|reduce\w*)\b/.test(text)) return "sub";
@@ -158,7 +206,7 @@ function detectOperation(text: string): Op {
 
 // ── Compute result ──
 
-function compute(numbers: number[], op: Op): number | null {
+export function compute(numbers: number[], op: Op): number | null {
   if (numbers.length < 2) return null;
   switch (op) {
     case "add": return numbers.reduce((a, b) => a + b, 0);
@@ -170,7 +218,7 @@ function compute(numbers: number[], op: Op): number | null {
 
 // ── Digit-based expression solver (fast path) ──
 
-function solveDigitExpression(challenge: string): string | null {
+export function solveDigitExpression(challenge: string): string | null {
   const allMatches = [...challenge.matchAll(/[\d+\-*/().^ ]+/g)];
   if (!allMatches.length) return null;
 
@@ -194,7 +242,7 @@ function solveDigitExpression(challenge: string): string | null {
 
 // ── Main solver: two-path approach ──
 
-function solveChallenge(challenge: string): string | null {
+export function solveChallenge(challenge: string): string | null {
   // Fast path: try numeric digit expression
   const digitResult = solveDigitExpression(challenge);
   if (digitResult !== null) return digitResult;
@@ -246,6 +294,11 @@ export async function autoVerify(
   return { success: response.ok, response };
 }
 
+/**
+ * MCP tool handler for manual verification.
+ * Accepts a challenge string (auto-solved) or a raw answer, formats it,
+ * POSTs to /verify, and updates local state based on the outcome.
+ */
 export async function handleVerify(args: Record<string, unknown>): Promise<ToolResult> {
   const state = loadState();
   clearExpiredState(state);
