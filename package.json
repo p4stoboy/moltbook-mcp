@@ -1,6 +1,6 @@
 {
   "name": "moltbook-mcp",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Challenge-aware MCP server for Moltbook with write safety guards",
   "type": "module",
   "bin": {
@@ -31,6 +31,10 @@
     "tsup": "^8.0.0",
     "typescript": "^5.7.0",
     "vitest": "^4.0.18"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/p4stoboy/moltbook-mcp.git"
   },
   "license": "MIT"
 }
