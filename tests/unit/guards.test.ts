@@ -387,4 +387,68 @@ describe("runApiTool", () => {
     expect(parsed.ok).toBe(false);
     expect(parsed.error.code).toBe("blocked_by_pending_verification");
   });
+
+  it("records auto-verify failure with attempt tracking", async () => {
+    // First call: write triggers verification with solvable challenge
+    // Second call: auto-verify submits answer but API rejects it
+    const callCount = { value: 0 };
+    const mockFetch = vi.fn().mockImplementation(() => {
+      callCount.value++;
+      if (callCount.value === 1) {
+        return Promise.resolve({
+          ok: false, status: 403,
+          headers: new Headers({ "content-type": "application/json" }),
+          json: () => Promise.resolve({
+            verification_code: "v123",
+            challenge: { challenge: "2 + 3", verification_code: "v123" },
+          }),
+          text: () => Promise.resolve(""),
+        });
+      }
+      // Auto-verify fails
+      return Promise.resolve({
+        ok: false, status: 400,
+        headers: new Headers({ "content-type": "application/json" }),
+        json: () => Promise.resolve({ error: "wrong answer" }),
+        text: () => Promise.resolve(""),
+      });
+    });
+    vi.stubGlobal("fetch", mockFetch);
+
+    const { STATE_PATH } = await import("../../src/state.js");
+    mockFs.files.set(STATE_PATH, JSON.stringify({ safe_mode: false }));
+
+    const { runApiTool } = await import("../../src/guards.js");
+    await runApiTool("moltbook_post_create", "POST", "/posts", { body: { title: "test" } });
+
+    const savedState = JSON.parse(mockFs.files.get(STATE_PATH)!);
+    expect(savedState.pending_verification.attempt_count).toBe(1);
+    expect(savedState.pending_verification.auto_attempted).toBe(true);
+    expect(savedState.pending_verification.failed_answers).toEqual(["5.00"]);
+  });
+
+  it("records solver-cant-parse with zero attempts", async () => {
+    // Write triggers verification with unsolvable challenge
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: false, status: 403,
+      headers: new Headers({ "content-type": "application/json" }),
+      json: () => Promise.resolve({
+        verification_code: "v456",
+        challenge: { challenge: "unsolvable gibberish no numbers", verification_code: "v456" },
+      }),
+      text: () => Promise.resolve(""),
+    });
+    vi.stubGlobal("fetch", mockFetch);
+
+    const { STATE_PATH } = await import("../../src/state.js");
+    mockFs.files.set(STATE_PATH, JSON.stringify({ safe_mode: false }));
+
+    const { runApiTool } = await import("../../src/guards.js");
+    await runApiTool("moltbook_post_create", "POST", "/posts", { body: { title: "test" } });
+
+    const savedState = JSON.parse(mockFs.files.get(STATE_PATH)!);
+    expect(savedState.pending_verification.attempt_count).toBe(0);
+    expect(savedState.pending_verification.auto_attempted).toBe(false);
+    expect(savedState.pending_verification.failed_answers).toEqual([]);
+  });
 });

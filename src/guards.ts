@@ -156,8 +156,24 @@ export async function runApiTool(toolName: string, method: string, path: string,
         http: { status: autoResult.response.status },
       });
     }
-    // Auto-solve failed — fall back to blocking (existing behavior)
-    state.pending_verification = { source_tool: toolName, detected_at: nowIso(), ...verification };
+    // Auto-solve failed — fall back to blocking with attempt tracking
+    if (autoResult) {
+      // Solver produced an answer but API rejected it
+      state.pending_verification = {
+        source_tool: toolName, detected_at: nowIso(), ...verification,
+        attempt_count: 1,
+        auto_attempted: true,
+        failed_answers: [autoResult.attemptedAnswer],
+      };
+    } else {
+      // Solver couldn't parse the challenge
+      state.pending_verification = {
+        source_tool: toolName, detected_at: nowIso(), ...verification,
+        attempt_count: 0,
+        auto_attempted: false,
+        failed_answers: [],
+      };
+    }
   }
   if (response.ok && isWrite && !verification) state.last_write_at = nowIso();
   saveState(state);

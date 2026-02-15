@@ -18,6 +18,9 @@ export interface PendingVerification {
   challenge: string | null;
   prompt: string | null;
   expires_at: string | null;
+  attempt_count?: number;
+  auto_attempted?: boolean;
+  failed_answers?: string[];
 }
 
 /**
