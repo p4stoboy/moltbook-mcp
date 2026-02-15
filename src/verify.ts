@@ -260,6 +260,7 @@ export function solveChallenge(challenge: string): string | null {
 export interface AutoVerifyResult {
   success: boolean;
   response: ApiResponse;
+  attemptedAnswer: string;
 }
 
 /**
@@ -291,8 +292,11 @@ export async function autoVerify(
   }
 
   const response = await apiRequest("POST", "/verify", { body: verifyBody });
-  return { success: response.ok, response };
+  return { success: response.ok, response, attemptedAnswer: answer };
 }
+
+/** Max /verify submissions per challenge (includes auto-verify attempt). */
+export const MAX_VERIFY_ATTEMPTS = 2;
 
 /**
  * MCP tool handler for manual verification.
@@ -302,6 +306,19 @@ export async function autoVerify(
 export async function handleVerify(args: Record<string, unknown>): Promise<ToolResult> {
   const state = loadState();
   clearExpiredState(state);
+
+  const pending = state.pending_verification;
+  if (pending && (pending.attempt_count ?? 0) >= MAX_VERIFY_ATTEMPTS) {
+    return makeResult({
+      ok: false,
+      tool: "moltbook_verify",
+      error: {
+        code: "verify_attempts_exhausted",
+        message: "Do NOT retry -- further attempts risk account suspension. Wait for challenge expiry.",
+      },
+      pending_verification: pending,
+    }, true);
+  }
 
   const rawAnswer = args.answer ?? args.solution;
   const rawChallenge = typeof args.challenge === "string" ? args.challenge : undefined;
@@ -326,6 +343,18 @@ export async function handleVerify(args: Record<string, unknown>): Promise<ToolR
     return makeResult({ ok: false, tool: "moltbook_verify", error: { code: "missing_answer", message: "Provide answer or challenge text to auto-solve." } }, true);
   }
 
+  if (pending?.failed_answers?.includes(answer)) {
+    return makeResult({
+      ok: false,
+      tool: "moltbook_verify",
+      error: {
+        code: "duplicate_answer_blocked",
+        message: "The solver is deterministic -- re-solving produces the same wrong answer. Provide a DIFFERENT answer manually.",
+      },
+      pending_verification: pending,
+    }, true);
+  }
+
   const verificationCode = (args.verification_code as string | undefined) ?? state.pending_verification?.verification_code ?? null;
   const body: Record<string, string> = { answer };
   if (verificationCode) body.verification_code = verificationCode;
@@ -341,7 +370,15 @@ export async function handleVerify(args: Record<string, unknown>): Promise<ToolR
 
   const verification = extractVerification(response);
   if (verification) {
-    state.pending_verification = { source_tool: "moltbook_verify", detected_at: nowIso(), ...verification };
+    const priorFailed = pending?.failed_answers ?? [];
+    state.pending_verification = {
+      source_tool: "moltbook_verify",
+      detected_at: nowIso(),
+      ...verification,
+      attempt_count: (pending?.attempt_count ?? 0) + 1,
+      auto_attempted: pending?.auto_attempted ?? false,
+      failed_answers: [...priorFailed, answer],
+    };
     state.offense_count += 1;
   } else if (response.ok) {
     state.pending_verification = null;

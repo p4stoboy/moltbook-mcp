@@ -737,4 +737,118 @@ describe("handleVerify", () => {
     // Should use auto-solved 5.00 not user-provided 999
     expect(body.answer).toBe("5.00");
   });
+
+  it("blocks when attempt_count >= MAX_VERIFY_ATTEMPTS", async () => {
+    const mockFetch = vi.fn();
+    vi.stubGlobal("fetch", mockFetch);
+    setStateFile({
+      pending_verification: {
+        source_tool: "test", detected_at: "", verification_code: "abc",
+        challenge: "2 + 3", prompt: null, expires_at: null,
+        attempt_count: 2, auto_attempted: true, failed_answers: ["5.00", "6.00"],
+      },
+    });
+
+    const { handleVerify } = await import("../../src/verify.js");
+    const result = await handleVerify({ answer: "7" });
+    const parsed = JSON.parse(result.content[0].text);
+    expect(parsed.error.code).toBe("verify_attempts_exhausted");
+    expect(result.isError).toBe(true);
+    // No fetch should have been made
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  it("blocks when computed answer matches a failed_answer", async () => {
+    const mockFetch = vi.fn();
+    vi.stubGlobal("fetch", mockFetch);
+    setStateFile({
+      pending_verification: {
+        source_tool: "test", detected_at: "", verification_code: "abc",
+        challenge: "2 + 3", prompt: null, expires_at: null,
+        attempt_count: 1, auto_attempted: true, failed_answers: ["5.00"],
+      },
+    });
+
+    const { handleVerify } = await import("../../src/verify.js");
+    // Provide the same answer that already failed
+    const result = await handleVerify({ answer: "5" });
+    const parsed = JSON.parse(result.content[0].text);
+    expect(parsed.error.code).toBe("duplicate_answer_blocked");
+    expect(result.isError).toBe(true);
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  it("blocks solver re-computation of same challenge text", async () => {
+    const mockFetch = vi.fn();
+    vi.stubGlobal("fetch", mockFetch);
+    // The solver will produce "5.00" for "2 + 3", which is already in failed_answers
+    setStateFile({
+      pending_verification: {
+        source_tool: "test", detected_at: "", verification_code: "abc",
+        challenge: "2 + 3", prompt: null, expires_at: null,
+        attempt_count: 1, auto_attempted: true, failed_answers: ["5.00"],
+      },
+    });
+
+    const { handleVerify } = await import("../../src/verify.js");
+    const result = await handleVerify({ challenge: "2 + 3" });
+    const parsed = JSON.parse(result.content[0].text);
+    expect(parsed.error.code).toBe("duplicate_answer_blocked");
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  it("increments attempt_count and accumulates failed_answers on failure", async () => {
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: false, status: 403,
+      headers: new Headers({ "content-type": "application/json" }),
+      json: () => Promise.resolve({
+        verification_code: "new_code",
+        challenge: { challenge: "What is 1+1?", verification_code: "new_code" },
+      }),
+      text: () => Promise.resolve(""),
+    });
+    vi.stubGlobal("fetch", mockFetch);
+    setStateFile({
+      pending_verification: {
+        source_tool: "test", detected_at: "", verification_code: "old_code",
+        challenge: "old challenge", prompt: null, expires_at: null,
+        attempt_count: 1, auto_attempted: true, failed_answers: ["5.00"],
+      },
+    });
+
+    const { handleVerify } = await import("../../src/verify.js");
+    await handleVerify({ answer: "99" });
+
+    const os = require("os");
+    const path = require("path");
+    const statePath = path.join(os.homedir(), ".config", "moltbook", "mcp_state.json");
+    const savedState = JSON.parse(mockFs.files.get(statePath)!);
+    expect(savedState.pending_verification.attempt_count).toBe(2);
+    expect(savedState.pending_verification.failed_answers).toEqual(["5.00", "99.00"]);
+    expect(savedState.pending_verification.auto_attempted).toBe(true);
+  });
+
+  it("allows retry with a different answer when under the limit", async () => {
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true, status: 200,
+      headers: new Headers({ "content-type": "application/json" }),
+      json: () => Promise.resolve({ verified: true }),
+      text: () => Promise.resolve(""),
+    });
+    vi.stubGlobal("fetch", mockFetch);
+    setStateFile({
+      pending_verification: {
+        source_tool: "test", detected_at: "", verification_code: "abc",
+        challenge: "2 + 3", prompt: null, expires_at: null,
+        attempt_count: 1, auto_attempted: true, failed_answers: ["5.00"],
+      },
+    });
+
+    const { handleVerify } = await import("../../src/verify.js");
+    // Different answer that isn't in failed_answers
+    const result = await handleVerify({ answer: "8" });
+    const parsed = JSON.parse(result.content[0].text);
+    expect(parsed.ok).toBe(true);
+    expect(mockFetch).toHaveBeenCalled();
+  });
 });
