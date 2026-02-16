@@ -427,6 +427,30 @@ describe("runApiTool", () => {
     expect(savedState.pending_verification.failed_answers).toEqual(["5.00"]);
   });
 
+  it("does not create pending_verification when extractVerification returns no verification_code", async () => {
+    // Response contains challenge keywords but no verification_code
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: false, status: 403,
+      headers: new Headers({ "content-type": "application/json" }),
+      json: () => Promise.resolve({
+        challenge: "some challenge text",
+        prompt: "Include the verification_code",
+        verification_code: null,
+      }),
+      text: () => Promise.resolve(""),
+    });
+    vi.stubGlobal("fetch", mockFetch);
+
+    const { STATE_PATH } = await import("../../src/state.js");
+    mockFs.files.set(STATE_PATH, JSON.stringify({ safe_mode: false }));
+
+    const { runApiTool } = await import("../../src/guards.js");
+    await runApiTool("moltbook_post_create", "POST", "/posts", { body: { title: "test" } });
+
+    const savedState = JSON.parse(mockFs.files.get(STATE_PATH)!);
+    expect(savedState.pending_verification).toBeNull();
+  });
+
   it("records solver-cant-parse with zero attempts", async () => {
     // Write triggers verification with unsolvable challenge
     const mockFetch = vi.fn().mockResolvedValue({

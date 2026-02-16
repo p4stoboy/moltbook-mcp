@@ -139,7 +139,8 @@ export async function runApiTool(toolName: string, method: string, path: string,
   }
 
   // Detect verification challenges on write responses
-  const verification = isWrite ? extractVerification(response) : null;
+  const rawVerification = isWrite ? extractVerification(response) : null;
+  const verification = rawVerification?.verification_code ? rawVerification : null;
   if (verification) {
     // Try auto-solve before blocking
     const autoResult = await autoVerify(verification, response.body);

@@ -76,11 +76,15 @@ export function saveState(state: MoltbookState): void {
 /** Clears expired verification challenges and cooldowns so stale blocks don't persist. */
 export function clearExpiredState(state: MoltbookState): void {
   if (state.pending_verification) {
-    if (state.pending_verification.expires_at) {
-      const ts = Date.parse(state.pending_verification.expires_at);
+    const v = state.pending_verification;
+    if (!v.verification_code && !v.challenge) {
+      // No actionable data — can never be solved, clear immediately
+      state.pending_verification = null;
+    } else if (v.expires_at) {
+      const ts = Date.parse(v.expires_at);
       if (Number.isFinite(ts) && ts < Date.now()) state.pending_verification = null;
-    } else if (state.pending_verification.detected_at) {
-      const age = Date.now() - Date.parse(state.pending_verification.detected_at);
+    } else if (v.detected_at) {
+      const age = Date.now() - Date.parse(v.detected_at);
       if (Number.isFinite(age) && age > MAX_VERIFICATION_AGE_MS) state.pending_verification = null;
     }
   }

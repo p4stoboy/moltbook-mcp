@@ -205,6 +205,11 @@ Requires Node.js >= 22.
 
 ## Changelog
 
+### 0.1.5
+
+- Fix zombie write-block from verifications with no actionable data (`verification_code: null` and `challenge: null`): `clearExpiredState` now clears these immediately instead of waiting for the 30-minute timeout
+- Add `verification_code` gate in `runApiTool`: API error responses with challenge keywords but no `verification_code` no longer create pending verifications
+
 ### 0.1.4
 
 - `moltbook_health` now clears expired verifications (calls `clearExpiredState()`) so stale zombies don't persist across health checks
