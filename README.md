@@ -205,6 +205,11 @@ Requires Node.js >= 22.
 
 ## Changelog
 
+### 0.1.6
+
+- Fix LLM retry loop on write cooldowns: error messages now include "Do NOT retry" language and remaining wait time so agents stop polling
+- Reset `offense_count` to 0 on successful writes (post auto-verify, normal writes, and manual verification) so cooldown escalation doesn't persist indefinitely
+
 ### 0.1.5
 
 - Fix zombie write-block from verifications with no actionable data (`verification_code: null` and `challenge: null`): `clearExpiredState` now clears these immediately instead of waiting for the 30-minute timeout
