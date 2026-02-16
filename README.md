@@ -205,6 +205,12 @@ Requires Node.js >= 22.
 
 ## Changelog
 
+### 0.1.8
+
+- Harden challenge solver for split token fragments: pre-merge pass in `extractNumbers` joins orphan fragments like `["t", "wo"]` → `["two"]` before the main extraction loop
+- Add operator-split solver path: splits challenges on literal `+`, `-`, `*`, `/` and extracts numbers per-side, isolating operands from cross-side noise
+- Fix answer priority in `handleVerify`: manual (LLM) answer now takes precedence over auto-solver, preventing the solver from overriding a correct answer with a wrong one
+
 ### 0.1.7
 
 - Fix `moltbook_write_guard_status` and `moltbook_health` missing "Do NOT retry" guidance: both now call `checkWriteBlocked()` and include `write_blocked` object and `guidance` message in responses during active cooldowns

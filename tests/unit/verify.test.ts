@@ -178,6 +178,22 @@ describe("extractNumbers", () => {
   it("handles split word tokens joined together", () => {
     expect(extractNumbers("twen ty")).toEqual([20]);
   });
+
+  it("pre-merges split compound with single-char fragment", () => {
+    expect(extractNumbers("thirty t wo")).toEqual([32]);
+  });
+
+  it("pre-merges split teen with multi-char fragments", () => {
+    expect(extractNumbers("fou rten")).toEqual([14]);
+  });
+
+  it("pre-merges two split numbers", () => {
+    expect(extractNumbers("thirty t wo fou rten")).toEqual([32, 14]);
+  });
+
+  it("pre-merges split ones fragment", () => {
+    expect(extractNumbers("eighty si x")).toEqual([86]);
+  });
 });
 
 // ── detectOperation ──
@@ -297,6 +313,14 @@ describe("solveChallenge (word path)", () => {
 
   it("returns null for single number", () => {
     expect(solveChallenge("five")).toBeNull();
+  });
+
+  it("solves Feb 16 challenge with split tokens via operator-split", () => {
+    expect(solveChallenge("ThIrTy T wO NeWtoNs + FoU rTeEn NeWToNs")).toBe("46.00");
+  });
+
+  it("solves split tokens with plus keyword", () => {
+    expect(solveChallenge("thirty t wo plus fou rteen")).toBe("46.00");
   });
 });
 
@@ -720,7 +744,7 @@ describe("handleVerify", () => {
     expect(body.challenge_id).toBe("ch_123");
   });
 
-  it("prefers auto-solved answer over user-provided", async () => {
+  it("prefers manual answer over auto-solved", async () => {
     const mockFetch = vi.fn().mockResolvedValue({
       ok: true, status: 200,
       headers: new Headers({ "content-type": "application/json" }),
@@ -731,11 +755,11 @@ describe("handleVerify", () => {
     setStateFile({});
 
     const { handleVerify } = await import("../../src/verify.js");
-    await handleVerify({ answer: "999", challenge: "2 + 3" });
+    await handleVerify({ answer: "46", challenge: "thirty t wo plus fourteen" });
     const [, fetchOpts] = mockFetch.mock.calls[0];
     const body = JSON.parse(fetchOpts.body);
-    // Should use auto-solved 5.00 not user-provided 999
-    expect(body.answer).toBe("5.00");
+    // Should use manual answer 46.00 not solver output
+    expect(body.answer).toBe("46.00");
   });
 
   it("blocks when attempt_count >= MAX_VERIFY_ATTEMPTS", async () => {
