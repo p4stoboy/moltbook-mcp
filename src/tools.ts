@@ -20,7 +20,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { apiRequest, normalizePath, RAW_PATH_ALLOWLIST } from "./api.js";
-import { runApiTool } from "./guards.js";
+import { checkWriteBlocked, runApiTool } from "./guards.js";
 import { clearExpiredState, loadState, saveState } from "./state.js";
 import { handleVerify } from "./verify.js";
 import { extractSuspension, makeResult, nowIso, requireString } from "./util.js";
@@ -38,12 +38,15 @@ function registerHealth(server: McpServer): void {
       state.suspension = { active: true, reason: suspension.reason, until: suspension.until ? String(suspension.until) : null, seen_at: nowIso() };
     }
     saveState(state);
+    const blocked = checkWriteBlocked(state, "");
     return makeResult({
       ok: status.ok && me.ok,
       tool: "moltbook_health",
       account_status: status.body?.status ?? null,
       pending_verification: state.pending_verification,
-      blocked_for_writes: Boolean(state.pending_verification || state.suspension?.active),
+      blocked_for_writes: Boolean(blocked),
+      write_blocked: blocked,
+      ...(blocked ? { guidance: blocked.message } : {}),
       suspension: state.suspension,
       cooldowns: state.cooldowns,
       status_http: status.status,
@@ -57,7 +60,14 @@ function registerWriteGuardStatus(server: McpServer): void {
     const state = loadState();
     clearExpiredState(state);
     saveState(state);
-    return makeResult({ ok: true, tool: "moltbook_write_guard_status", ...state });
+    const blocked = checkWriteBlocked(state, "");
+    return makeResult({
+      ok: true,
+      tool: "moltbook_write_guard_status",
+      ...state,
+      write_blocked: blocked,
+      ...(blocked ? { guidance: blocked.message } : {}),
+    });
   });
 }
 
