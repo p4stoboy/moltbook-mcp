@@ -9,7 +9,7 @@ vi.mock("fs", () => ({
   mkdirSync: mockFs.mkdirSync,
 }));
 
-const { loadState, saveState, clearExpiredState, STATE_PATH, DEFAULT_STATE } = await import("../../src/state.js");
+const { loadState, saveState, clearExpiredState, STATE_PATH, DEFAULT_STATE, MAX_VERIFICATION_AGE_MS } = await import("../../src/state.js");
 
 describe("loadState", () => {
   beforeEach(() => {
@@ -165,12 +165,30 @@ describe("clearExpiredState", () => {
     expect(state.cooldowns.write_until).toBe(future);
   });
 
-  it("handles null expires_at on verification", () => {
+  it("clears zombie verification with null expires_at when detected_at exceeds max age", () => {
+    const oldTimestamp = new Date(Date.now() - MAX_VERIFICATION_AGE_MS - 60_000).toISOString();
     const state = {
       ...DEFAULT_STATE,
       pending_verification: {
         source_tool: "test",
-        detected_at: pastIso(),
+        detected_at: oldTimestamp,
+        verification_code: null,
+        challenge: null,
+        prompt: null,
+        expires_at: null,
+      },
+    };
+    clearExpiredState(state);
+    expect(state.pending_verification).toBeNull();
+  });
+
+  it("keeps recent verification with null expires_at when under max age", () => {
+    const recentTimestamp = new Date(Date.now() - 60_000).toISOString(); // 1 min ago
+    const state = {
+      ...DEFAULT_STATE,
+      pending_verification: {
+        source_tool: "test",
+        detected_at: recentTimestamp,
         verification_code: "abc",
         challenge: null,
         prompt: null,
@@ -178,7 +196,6 @@ describe("clearExpiredState", () => {
       },
     };
     clearExpiredState(state);
-    // Should not clear because expires_at is null (no expiry)
     expect(state.pending_verification).not.toBeNull();
   });
 

@@ -160,6 +160,8 @@ export function extractVerification(response: ApiResponse): { verification_code:
     body.challenge_text ?? body.math_challenge ?? body.question ??
     null
   ) as string | null;
+  // Keywords alone without actionable data means an informational error, not a real challenge
+  if (!code && typeof challengeText !== "string") return null;
   return {
     verification_code: code ? String(code) : null,
     challenge: typeof challengeText === "string" ? challengeText : null,

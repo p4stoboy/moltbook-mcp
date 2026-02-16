@@ -1,6 +1,6 @@
 {
   "name": "moltbook-mcp",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Challenge-aware MCP server for Moltbook with write safety guards",
   "type": "module",
   "bin": {

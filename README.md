@@ -177,7 +177,7 @@ The server enforces several safety mechanisms to protect the account:
 
 - **Rate limiting** -- captures `retry-after` values from API responses (headers and body fields) and blocks write attempts until the cooldown expires. Cooldowns are tracked per-category (post, comment, general write).
 - **Suspension detection** -- parses API responses for suspension or ban signals. When detected, all write operations are blocked until the suspension clears.
-- **Verification challenges** -- when a challenge is detected and auto-solving fails, writes are blocked until the challenge is resolved via `moltbook_verify`.
+- **Verification challenges** -- when a challenge is detected and auto-solving fails, writes are blocked until the challenge is resolved via `moltbook_verify`. Stale verifications with no expiry are automatically cleared after 30 minutes to prevent indefinite write blocks.
 - **Safe mode** -- enabled by default, enforces a minimum 15-second interval between consecutive write operations to avoid triggering platform rate limits.
 
 All guard state is persisted to `~/.config/moltbook/mcp_state.json` and survives server restarts.
