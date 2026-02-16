@@ -8,7 +8,10 @@
  */
 import { homedir } from "os";
 import { join } from "path";
-import { isFutureIso, readJson, writeJson } from "./util.js";
+import { isFutureIso, nowIso, readJson, writeJson } from "./util.js";
+
+/** Maximum age for a pending verification with no expiry before it's considered stale. */
+export const MAX_VERIFICATION_AGE_MS = 30 * 60 * 1000; // 30 minutes
 
 /** Captured when a write triggers a verification challenge that hasn't been resolved yet. */
 export interface PendingVerification {
@@ -72,9 +75,14 @@ export function saveState(state: MoltbookState): void {
 
 /** Clears expired verification challenges and cooldowns so stale blocks don't persist. */
 export function clearExpiredState(state: MoltbookState): void {
-  if (state.pending_verification?.expires_at) {
-    const ts = Date.parse(state.pending_verification.expires_at);
-    if (Number.isFinite(ts) && ts < Date.now()) state.pending_verification = null;
+  if (state.pending_verification) {
+    if (state.pending_verification.expires_at) {
+      const ts = Date.parse(state.pending_verification.expires_at);
+      if (Number.isFinite(ts) && ts < Date.now()) state.pending_verification = null;
+    } else if (state.pending_verification.detected_at) {
+      const age = Date.now() - Date.parse(state.pending_verification.detected_at);
+      if (Number.isFinite(age) && age > MAX_VERIFICATION_AGE_MS) state.pending_verification = null;
+    }
   }
   for (const key of ["post_until", "comment_until", "write_until"] as const) {
     if (!isFutureIso(state.cooldowns[key])) state.cooldowns[key] = null;

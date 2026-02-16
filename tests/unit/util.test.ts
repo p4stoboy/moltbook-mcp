@@ -291,4 +291,38 @@ describe("extractVerification", () => {
     });
     expect(extractVerification(response)).toBeNull();
   });
+
+  it("returns null for keywords-only error with no code or challenge (zombie prevention)", () => {
+    const response = makeApiResponse({
+      status: 400,
+      ok: false,
+      body: {
+        error: "Invalid verification attempt",
+        message: "Include the verification_code from your content creation response",
+      },
+    });
+    expect(extractVerification(response)).toBeNull();
+  });
+
+  it("returns non-null when verification_code is present without challenge text", () => {
+    const response = makeApiResponse({
+      status: 403,
+      ok: false,
+      body: { verification_code: "abc123", message: "Verification required" },
+    });
+    const result = extractVerification(response);
+    expect(result).not.toBeNull();
+    expect(result!.verification_code).toBe("abc123");
+  });
+
+  it("returns non-null when challenge text is present without code", () => {
+    const response = makeApiResponse({
+      status: 403,
+      ok: false,
+      body: { challenge_text: "What is 2 + 3?", message: "Solve this challenge" },
+    });
+    const result = extractVerification(response);
+    expect(result).not.toBeNull();
+    expect(result!.challenge).toBe("What is 2 + 3?");
+  });
 });

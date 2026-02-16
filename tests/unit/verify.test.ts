@@ -828,6 +828,37 @@ describe("handleVerify", () => {
     expect(savedState.pending_verification.auto_attempted).toBe(true);
   });
 
+  it("does not create zombie verification from /verify error with keywords but no code", async () => {
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: false, status: 400,
+      headers: new Headers({ "content-type": "application/json" }),
+      json: () => Promise.resolve({
+        error: "Invalid verification attempt",
+        message: "Include the verification_code from your content creation response",
+      }),
+      text: () => Promise.resolve(""),
+    });
+    vi.stubGlobal("fetch", mockFetch);
+    setStateFile({
+      pending_verification: {
+        source_tool: "test", detected_at: "", verification_code: "real_code",
+        challenge: "2 + 3", prompt: null, expires_at: null,
+        attempt_count: 1, auto_attempted: true, failed_answers: [],
+      },
+    });
+
+    const { handleVerify } = await import("../../src/verify.js");
+    await handleVerify({ answer: "5" });
+
+    const os = require("os");
+    const path = require("path");
+    const statePath = path.join(os.homedir(), ".config", "moltbook", "mcp_state.json");
+    const savedState = JSON.parse(mockFs.files.get(statePath)!);
+    // Should NOT have overwritten pending_verification with a zombie
+    // The error response has no verification_code so it should not be treated as a re-challenge
+    expect(savedState.offense_count).toBe(0);
+  });
+
   it("allows retry with a different answer when under the limit", async () => {
     const mockFetch = vi.fn().mockResolvedValue({
       ok: true, status: 200,

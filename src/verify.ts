@@ -368,7 +368,10 @@ export async function handleVerify(args: Record<string, unknown>): Promise<ToolR
     state.suspension = { active: true, reason: suspension.reason, until: suspension.until ? String(suspension.until) : null, seen_at: nowIso() };
   }
 
-  const verification = extractVerification(response);
+  const rawVerification = extractVerification(response);
+  // A genuine re-challenge from /verify always includes a new verification_code;
+  // keyword-only matches from error messages are not real challenges.
+  const verification = rawVerification?.verification_code ? rawVerification : null;
   if (verification) {
     const priorFailed = pending?.failed_answers ?? [];
     state.pending_verification = {
