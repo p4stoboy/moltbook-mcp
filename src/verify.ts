@@ -386,6 +386,7 @@ export async function handleVerify(args: Record<string, unknown>): Promise<ToolR
   } else if (response.ok) {
     state.pending_verification = null;
     state.last_write_at = nowIso();
+    state.offense_count = 0;
   }
   saveState(state);
 

@@ -81,10 +81,12 @@ export function checkWriteBlocked(state: MoltbookState, _toolName: string): Writ
     return { code: "blocked_by_pending_verification", message: "Verification challenge pending. Call moltbook_challenge_status then moltbook_verify." };
   }
   if (isFutureIso(state.cooldowns?.write_until)) {
-    return { code: "write_cooldown_active", message: `Write cooldown active until ${state.cooldowns.write_until}` };
+    const remaining = Math.ceil((Date.parse(state.cooldowns.write_until!) - Date.now()) / 60_000);
+    return { code: "write_cooldown_active", message: `Write cooldown active until ${state.cooldowns.write_until} (~${remaining} min remaining). Do NOT retry — wait for the cooldown to expire.` };
   }
   if (state.safe_mode && state.last_write_at && Date.now() - Date.parse(state.last_write_at) < SAFE_WRITE_INTERVAL_MS) {
-    return { code: "safe_mode_write_interval", message: `Safe mode allows one write every ${Math.round(SAFE_WRITE_INTERVAL_MS / 1000)}s.` };
+    const wait = Math.ceil((SAFE_WRITE_INTERVAL_MS - (Date.now() - Date.parse(state.last_write_at))) / 1000);
+    return { code: "safe_mode_write_interval", message: `Safe mode: minimum ${Math.round(SAFE_WRITE_INTERVAL_MS / 1000)}s between writes (~${wait}s remaining). Do NOT retry immediately.` };
   }
   return null;
 }
@@ -147,6 +149,7 @@ export async function runApiTool(toolName: string, method: string, path: string,
     if (autoResult?.success) {
       // Challenge solved transparently — treat as successful write
       state.last_write_at = nowIso();
+      state.offense_count = 0;
       saveState(state);
       return makeResult({
         ok: true,
@@ -176,7 +179,10 @@ export async function runApiTool(toolName: string, method: string, path: string,
       };
     }
   }
-  if (response.ok && isWrite && !verification) state.last_write_at = nowIso();
+  if (response.ok && isWrite && !verification) {
+    state.last_write_at = nowIso();
+    state.offense_count = 0;
+  }
   saveState(state);
 
   if (verification) {
