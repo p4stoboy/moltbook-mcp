@@ -32,6 +32,7 @@ function registerHealth(server: McpServer): void {
     const status = await apiRequest("GET", "/agents/status");
     const me = await apiRequest("GET", "/agents/me");
     const state = loadState();
+    clearExpiredState(state);
     const suspension = extractSuspension(status);
     if (suspension) {
       state.suspension = { active: true, reason: suspension.reason, until: suspension.until ? String(suspension.until) : null, seen_at: nowIso() };
@@ -42,6 +43,7 @@ function registerHealth(server: McpServer): void {
       tool: "moltbook_health",
       account_status: status.body?.status ?? null,
       pending_verification: state.pending_verification,
+      blocked_for_writes: Boolean(state.pending_verification || state.suspension?.active),
       suspension: state.suspension,
       cooldowns: state.cooldowns,
       status_http: status.status,
