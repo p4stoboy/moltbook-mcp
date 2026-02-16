@@ -203,6 +203,19 @@ npm run test:coverage
 
 Requires Node.js >= 22.
 
+## Changelog
+
+### 0.1.4
+
+- `moltbook_health` now clears expired verifications (calls `clearExpiredState()`) so stale zombies don't persist across health checks
+- `moltbook_health` now returns `blocked_for_writes` boolean, matching `moltbook_challenge_status` behavior
+
+### 0.1.3
+
+- Fix zombie pending verification blocking all writes indefinitely
+- Add 30-minute max age for verifications with no expiry
+- Add retry safety guards (extraction gate, verify-handler gate) to prevent zombie verification loops
+
 ## License
 
 [MIT](https://opensource.org/licenses/MIT)
