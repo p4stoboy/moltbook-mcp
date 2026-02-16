@@ -132,7 +132,23 @@ function fuzzyMatch(candidate: string, db: { dict: Record<string, number>; keys:
 // ── Extract numbers from normalized text ──
 
 export function extractNumbers(text: string): number[] {
-  const tokens = text.split(" ").filter(t => t.length > 0 && !FILLER.has(t));
+  let tokens = text.split(" ").filter(t => t.length > 0 && !FILLER.has(t));
+
+  // Pre-merge: join fragments that form number words when combined
+  // Handles split tokens like ["t", "wo"] → ["two"], ["fou", "rten"] → ["fourten"]
+  let j = 0;
+  while (j < tokens.length - 1) {
+    const t = tokens[j]!;
+    if (!fuzzyMatch(t, TENS) && !fuzzyMatch(t, ONES)) {
+      const merged = t + tokens[j + 1]!;
+      if (fuzzyMatch(merged, TENS) || fuzzyMatch(merged, ONES)) {
+        tokens.splice(j, 2, merged);
+        continue;
+      }
+    }
+    j++;
+  }
+
   const numbers: number[] = [];
   let i = 0;
 
@@ -242,10 +258,40 @@ export function solveDigitExpression(challenge: string): string | null {
 
 // ── Main solver: two-path approach ──
 
+/**
+ * Operator-split path: split on literal +, -, *, / and extract per-side.
+ * Isolates operands so noise in one side doesn't contaminate the other.
+ */
+function solveWithOperatorSplit(challenge: string): string | null {
+  const opMap: Record<string, Op> = { "+": "add", "-": "sub", "*": "mul", "/": "div" };
+  for (const [opChar, op] of Object.entries(opMap)) {
+    const sides = challenge.split(opChar);
+    if (sides.length !== 2) continue;
+    const left = sides[0]!.trim();
+    const right = sides[1]!.trim();
+    if (!left || !right) continue;
+
+    const leftNums = extractNumbers(normalizeChallenge(left));
+    const rightNums = extractNumbers(normalizeChallenge(right));
+
+    // Each side must yield exactly 1 number (compound tens+ones counts as 1)
+    if (leftNums.length !== 1 || rightNums.length !== 1) continue;
+
+    const result = compute([leftNums[0]!, rightNums[0]!], op);
+    if (result === null || !Number.isFinite(result)) continue;
+    return result.toFixed(2);
+  }
+  return null;
+}
+
 export function solveChallenge(challenge: string): string | null {
   // Fast path: try numeric digit expression
   const digitResult = solveDigitExpression(challenge);
   if (digitResult !== null) return digitResult;
+
+  // Operator-split path: split on literal +, -, *, / and extract per-side
+  const opSplitResult = solveWithOperatorSplit(challenge);
+  if (opSplitResult !== null) return opSplitResult;
 
   // Word path: parse obfuscated English number words
   const normalized = normalizeChallenge(challenge);
@@ -323,20 +369,17 @@ export async function handleVerify(args: Record<string, unknown>): Promise<ToolR
   const rawAnswer = args.answer ?? args.solution;
   const rawChallenge = typeof args.challenge === "string" ? args.challenge : undefined;
 
-  // If a challenge string is provided, try auto-solving it
+  // Prefer manual answer (LLM may have solved correctly when solver can't)
   let answer: string | undefined;
-  if (rawChallenge && typeof rawChallenge === "string") {
+  if (rawAnswer !== undefined && rawAnswer !== null && String(rawAnswer).trim() !== "") {
+    answer = String(rawAnswer).trim();
+    const asNum = Number(answer);
+    if (Number.isFinite(asNum)) answer = asNum.toFixed(2);
+  }
+  // Fall back to auto-solving from challenge text
+  if (!answer && rawChallenge && typeof rawChallenge === "string") {
     const solved = solveChallenge(rawChallenge);
     if (solved) answer = solved;
-  }
-  // Fall back to the user-provided answer
-  if (!answer && rawAnswer !== undefined && rawAnswer !== null && String(rawAnswer).trim() !== "") {
-    answer = String(rawAnswer).trim();
-    // If the answer looks numeric, format to 2 decimal places
-    const asNum = Number(answer);
-    if (Number.isFinite(asNum)) {
-      answer = asNum.toFixed(2);
-    }
   }
 
   if (!answer) {
