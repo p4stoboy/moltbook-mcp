@@ -199,6 +199,57 @@ describe("clearExpiredState", () => {
     expect(state.pending_verification).not.toBeNull();
   });
 
+  it("immediately clears verification with no verification_code and no challenge regardless of age", () => {
+    const recentTimestamp = new Date(Date.now() - 1_000).toISOString(); // 1 second ago
+    const state = {
+      ...DEFAULT_STATE,
+      pending_verification: {
+        source_tool: "moltbook_verify",
+        detected_at: recentTimestamp,
+        verification_code: null,
+        challenge: null,
+        prompt: "Include the verification_code from your content creation response",
+        expires_at: null,
+      },
+    };
+    clearExpiredState(state);
+    expect(state.pending_verification).toBeNull();
+  });
+
+  it("keeps verification with a challenge but no verification_code", () => {
+    const recentTimestamp = new Date(Date.now() - 1_000).toISOString();
+    const state = {
+      ...DEFAULT_STATE,
+      pending_verification: {
+        source_tool: "test",
+        detected_at: recentTimestamp,
+        verification_code: null,
+        challenge: "What is 2 + 3?",
+        prompt: null,
+        expires_at: null,
+      },
+    };
+    clearExpiredState(state);
+    expect(state.pending_verification).not.toBeNull();
+  });
+
+  it("keeps verification with a verification_code but no challenge", () => {
+    const recentTimestamp = new Date(Date.now() - 1_000).toISOString();
+    const state = {
+      ...DEFAULT_STATE,
+      pending_verification: {
+        source_tool: "test",
+        detected_at: recentTimestamp,
+        verification_code: "v123",
+        challenge: null,
+        prompt: null,
+        expires_at: null,
+      },
+    };
+    clearExpiredState(state);
+    expect(state.pending_verification).not.toBeNull();
+  });
+
   it("handles null cooldown values", () => {
     const state = {
       ...DEFAULT_STATE,
