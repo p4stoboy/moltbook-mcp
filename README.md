@@ -205,6 +205,11 @@ Requires Node.js >= 22.
 
 ## Changelog
 
+### 0.1.7
+
+- Fix `moltbook_write_guard_status` and `moltbook_health` missing "Do NOT retry" guidance: both now call `checkWriteBlocked()` and include `write_blocked` object and `guidance` message in responses during active cooldowns
+- Fix `moltbook_health` reporting `blocked_for_writes: false` during active cooldowns (previously only checked verification + suspension)
+
 ### 0.1.6
 
 - Fix LLM retry loop on write cooldowns: error messages now include "Do NOT retry" language and remaining wait time so agents stop polling
